@@ -1,8 +1,12 @@
-import torch
-from torch.nn import functional as F
-from torch import nn as nn
+# import torch
+# from torch.nn import functional as F
+# from torch import nn as nn
 
-class NormLayer(nn.Module):
+import mindspore as ms
+from mindspore import ops, nn
+
+# class NormLayer(nn.Module):
+class NormLayer(nn.Cell):
     """Normalization Layers.
     ------------
     # Arguments
@@ -25,11 +29,14 @@ class NormLayer(nn.Module):
         else:
             assert 1==0, 'Norm type {} not support.'.format(norm_type)
 
-    def forward(self, x):
+    # def forward(self, x):
+    def construct(self, x):
         return self.norm(x)
 
 
-class ActLayer(nn.Module):
+# class ActLayer(nn.Module):
+class ActLayer(nn.Cell):
+    
     """activation layer.
     ------------
     # Arguments
@@ -52,48 +59,68 @@ class ActLayer(nn.Module):
         elif relu_type == 'none':
             self.func = lambda x: x*1.0
         elif relu_type == 'silu':
-            self.func = nn.SiLU(True)
+            # self.func = nn.SiLU(True)
+            self.func = nn.SiLU()
         elif relu_type == 'gelu':
             self.func = nn.GELU()
         else:
             assert 1==0, 'activation type {} not support.'.format(relu_type)
 
-    def forward(self, x):
+    # def forward(self, x):
+    def construct(self, x):
         return self.func(x)
 
 
-class ResBlock(nn.Module):
+# class ResBlock(nn.Module):
+class ResBlock(nn.Cell):
     """
     Use preactivation version of residual block, the same as taming
     """
     def __init__(self, in_channel, out_channel, norm_type='gn', act_type='leakyrelu'):
         super(ResBlock, self).__init__()
 
-        self.conv = nn.Sequential(
+        # self.conv = nn.Sequential(
+        #     NormLayer(in_channel, norm_type),
+        #     ActLayer(in_channel, act_type),
+        #     nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+        #     NormLayer(out_channel, norm_type),
+        #     ActLayer(out_channel, act_type),
+        #     nn.Conv2d(out_channel, out_channel, 3, stride=1, padding=1),
+        # )
+
+        self.conv = nn.SequentialCell(
             NormLayer(in_channel, norm_type),
             ActLayer(in_channel, act_type),
-            nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+            nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1, pad_mode='pad', has_bias=True),
             NormLayer(out_channel, norm_type),
             ActLayer(out_channel, act_type),
-            nn.Conv2d(out_channel, out_channel, 3, stride=1, padding=1),
+            nn.Conv2d(out_channel, out_channel, 3, stride=1, padding=1, pad_mode='pad', has_bias=True),
         )
 
-    def forward(self, input):
-        with torch.backends.cudnn.flags(enabled=True, deterministic=True, benchmark=False):
-            res = self.conv(input)
+    # def forward(self, input):
+    def construct(self, input):
+        # with torch.backends.cudnn.flags(enabled=True, deterministic=True, benchmark=False):
+        res = self.conv(input)
         out = res + input
         return out
 
 
-class CombineQuantBlock(nn.Module):
+# class CombineQuantBlock(nn.Module):
+class CombineQuantBlock(nn.Cell):
     def __init__(self, in_ch1, in_ch2, out_channel):
         super().__init__()
-        self.conv = nn.Conv2d(in_ch1 + in_ch2, out_channel, 3, 1, 1)
+        # self.conv = nn.Conv2d(in_ch1 + in_ch2, out_channel, 3, 1, 1)
+        self.conv = nn.Conv2d(int(in_ch1 + in_ch2), int(out_channel), 3, 1, padding=1, pad_mode='pad', has_bias=True)
 
-    def forward(self, input1, input2=None):
+
+    # def forward(self, input1, input2=None):
+    def construct(self, input1, input2=None):
+        
         if input2 is not None:
-            input2 = F.interpolate(input2, input1.shape[2:])
-            input = torch.cat((input1, input2), dim=1)
+            # input2 = F.interpolate(input2, input1.shape[2:])
+            # input = torch.cat((input1, input2), dim=1)
+            input2 = ops.interpolate(input2, input1.shape[2:])
+            input = ops.cat((input1, input2), axis=1)
         else:
             input = input1
         out = self.conv(input)

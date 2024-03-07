@@ -2,7 +2,8 @@ import os
 import cv2
 import random
 import numpy as np
-from torch.utils import data as data
+# from torch.utils import data as data
+from mindspore import dataset as ds
 from scipy import ndimage
 import scipy
 import scipy.stats as ss
@@ -49,7 +50,9 @@ def add_JPEG_noise(img):
     return img
 
 @DATASET_REGISTRY.register()
-class HazeOnlineDataset(data.Dataset):
+# class HazeOnlineDataset(data.Dataset):
+# class HazeOnlineDataset(ds.GeneratorDataset):
+class HazeOnlineDataset:
     """Paired image dataset for image restoration.
 
     Read LQ (Low Quality, e.g. LR (Low Resolution), blurry, noisy, etc) and

@@ -1,9 +1,12 @@
 import math
-import torch
-from torch.utils.data.sampler import Sampler
-
-
-class EnlargedSampler(Sampler):
+# import torch
+# from torch.utils.data.sampler import Sampler
+import mindspore as ms
+from mindspore import ops
+# from mindspore.dataset import Sampler
+import numpy as np
+# class EnlargedSampler(Sampler):
+class EnlargedSampler:
     """Sampler that restricts data loading to a subset of the dataset.
 
     Modified from torch.utils.data.distributed.DistributedSampler
@@ -28,9 +31,11 @@ class EnlargedSampler(Sampler):
 
     def __iter__(self):
         # deterministically shuffle based on epoch
-        g = torch.Generator()
-        g.manual_seed(self.epoch)
-        indices = torch.randperm(self.total_size, generator=g).tolist()
+        # g = torch.Generator()
+        # g.manual_seed(self.epoch)
+        # indices = torch.randperm(self.total_size, generator=g).tolist()
+        indices = np.random.permutation(self.total_size).tolist()
+        
 
         dataset_size = len(self.dataset)
         indices = [v % dataset_size for v in indices]

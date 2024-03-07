@@ -1,9 +1,10 @@
 import os
 import time
-import torch
+# import torch
 from collections import OrderedDict
 from copy import deepcopy
-from torch.nn.parallel import DataParallel, DistributedDataParallel
+# from torch.nn.parallel import DataParallel, DistributedDataParallel
+import mindspore as ms
 
 from basicsr.models import lr_scheduler as lr_scheduler
 from basicsr.utils import get_root_logger
@@ -15,7 +16,9 @@ class BaseModel():
 
     def __init__(self, opt):
         self.opt = opt
-        self.device = torch.device('cuda' if opt['num_gpu'] != 0 else 'cpu')
+        # self.device = torch.device('cuda' if opt['num_gpu'] != 0 else 'cpu')
+        self.device = 'GPU' if opt['num_gpu'] != 0 else 'CPU'
+
         self.is_train = opt['is_train']
         self.schedulers = []
         self.optimizers = []
@@ -107,18 +110,20 @@ class BaseModel():
         Args:
             net (nn.Module)
         """
-        net = net.to(self.device)
-        if self.opt['dist']:
-            find_unused_parameters = self.opt.get('find_unused_parameters', False)
-            net = DistributedDataParallel(
-                net, device_ids=[torch.cuda.current_device()], find_unused_parameters=find_unused_parameters)
-        elif self.opt['num_gpu'] > 1:
-            net = DataParallel(net)
+        # net = net.to(self.device)
+        # if self.opt['dist']:
+        #     find_unused_parameters = self.opt.get('find_unused_parameters', False)
+        #     net = DistributedDataParallel(
+        #         net, device_ids=[torch.cuda.current_device()], find_unused_parameters=find_unused_parameters)
+        # elif self.opt['num_gpu'] > 1:
+        #     net = DataParallel(net)
         return net
 
     def get_optimizer(self, optim_type, params, lr, **kwargs):
         if optim_type == 'Adam':
-            optimizer = torch.optim.Adam(params, lr, **kwargs)
+            # optimizer = torch.optim.Adam(params, lr, **kwargs)
+            optimizer = ms.experimental.optim.Adam(params, lr, **kwargs)
+
         else:
             raise NotImplementedError(f'optimizer {optim_type} is not supperted yet.')
         return optimizer
@@ -140,8 +145,8 @@ class BaseModel():
         """Get bare model, especially under wrapping with
         DistributedDataParallel or DataParallel.
         """
-        if isinstance(net, (DataParallel, DistributedDataParallel)):
-            net = net.module
+        # if isinstance(net, (DataParallel, DistributedDataParallel)):
+        #     net = net.module
         return net
 
     @master_only
@@ -151,10 +156,10 @@ class BaseModel():
         Args:
             net (nn.Module)
         """
-        if isinstance(net, (DataParallel, DistributedDataParallel)):
-            net_cls_str = f'{net.__class__.__name__} - {net.module.__class__.__name__}'
-        else:
-            net_cls_str = f'{net.__class__.__name__}'
+        # if isinstance(net, (DataParallel, DistributedDataParallel)):
+        #     net_cls_str = f'{net.__class__.__name__} - {net.module.__class__.__name__}'
+        # else:
+        net_cls_str = f'{net.__class__.__name__}'
 
         net = self.get_bare_model(net)
         net_str = str(net)
@@ -235,14 +240,16 @@ class BaseModel():
             for key, param in state_dict.items():
                 if key.startswith('module.'):  # remove unnecessary 'module.'
                     key = key[7:]
-                state_dict[key] = param.cpu()
+                # state_dict[key] = param.cpu()
+                state_dict[key] = param
             save_dict[param_key_] = state_dict
 
         # avoid occasional writing errors
         retry = 3
         while retry > 0:
             try:
-                torch.save(save_dict, save_path)
+                # torch.save(save_dict, save_path)
+                ms.save_checkpoint(save_dict, save_path)
             except Exception as e:
                 logger = get_root_logger()
                 logger.warning(f'Save model error: {e}, remaining retry times: {retry - 1}')
@@ -303,7 +310,9 @@ class BaseModel():
         """
         logger = get_root_logger()
         net = self.get_bare_model(net)
-        load_net = torch.load(load_path, map_location=lambda storage, loc: storage)
+        # load_net = torch.load(load_path, map_location=lambda storage, loc: storage)
+        load_net = ms.load_checkpoint(load_path)
+
         if param_key is not None:
             if param_key not in load_net and 'params' in load_net:
                 param_key = 'params'
@@ -316,8 +325,8 @@ class BaseModel():
                 load_net[k[7:]] = v
                 load_net.pop(k)
         self._print_different_keys_loading(net, load_net, strict)
-        net.load_state_dict(load_net, strict=strict)
-
+        # net.load_state_dict(load_net, strict=strict)
+        ms.load_checkpoint(load_path, net)
     @master_only
     def save_training_state(self, epoch, current_iter):
         """Save training states during training, which will be used for
@@ -340,7 +349,8 @@ class BaseModel():
             retry = 3
             while retry > 0:
                 try:
-                    torch.save(state, save_path)
+                    # torch.save(state, save_path)
+                    ms.save_checkpoint(state, save_path)
                 except Exception as e:
                     logger = get_root_logger()
                     logger.warning(f'Save training state error: {e}, remaining retry times: {retry - 1}')
@@ -376,21 +386,21 @@ class BaseModel():
         Args:
             loss_dict (OrderedDict): Loss dict.
         """
-        with torch.no_grad():
-            if self.opt['dist']:
-                keys = []
-                losses = []
-                for name, value in loss_dict.items():
-                    keys.append(name)
-                    losses.append(value)
-                losses = torch.stack(losses, 0)
-                torch.distributed.reduce(losses, dst=0)
-                if self.opt['rank'] == 0:
-                    losses /= self.opt['world_size']
-                loss_dict = {key: loss for key, loss in zip(keys, losses)}
+        # with torch.no_grad():
+        # if self.opt['dist']:
+        #     keys = []
+        #     losses = []
+        #     for name, value in loss_dict.items():
+        #         keys.append(name)
+        #         losses.append(value)
+        #     losses = torch.stack(losses, 0)
+        #     torch.distributed.reduce(losses, dst=0)
+        #     if self.opt['rank'] == 0:
+        #         losses /= self.opt['world_size']
+        #     loss_dict = {key: loss for key, loss in zip(keys, losses)}
 
-            log_dict = OrderedDict()
-            for name, value in loss_dict.items():
-                log_dict[name] = value.mean().item()
+        log_dict = OrderedDict()
+        for name, value in loss_dict.items():
+            log_dict[name] = value.mean().item()
 
-            return log_dict
+        return log_dict

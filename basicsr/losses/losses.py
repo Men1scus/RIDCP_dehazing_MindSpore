@@ -1,9 +1,10 @@
 import math
-import torch
-from torch import autograd as autograd
-from torch import nn as nn
-from torch.nn import functional as F
-
+# import torch
+# from torch import autograd as autograd
+# from torch import nn as nn
+# from torch.nn import functional as F
+import mindspore as ms
+from mindspore import nn, ops
 from basicsr.archs.vgg_arch import VGGFeatureExtractor
 from basicsr.utils.registry import LOSS_REGISTRY
 from .loss_util import weighted_loss
@@ -28,7 +29,8 @@ def charbonnier_loss(pred, target, eps=1e-12):
 
 
 @LOSS_REGISTRY.register()
-class LPIPSLoss(nn.Module):
+# class LPIPSLoss(nn.Module):
+class LPIPSLoss(nn.Cell):
     """LPIPS loss with vgg backbone.
     """
     def __init__(self, loss_weight = 1.0):
@@ -36,12 +38,14 @@ class LPIPSLoss(nn.Module):
         self.model = pyiqa.create_metric('lpips-vgg', as_loss=True)
         self.loss_weight = loss_weight
 
-    def forward(self, x, gt):
+    # def forward(self, x, gt):
+    def construct(self, x, gt):
         return self.model(x, gt) * self.loss_weight, None
 
 
 @LOSS_REGISTRY.register()
-class L1Loss(nn.Module):
+# class L1Loss(nn.Module):
+class L1Loss(nn.Cell):
     """L1 (mean absolute error, MAE) loss.
 
     Args:
@@ -58,7 +62,8 @@ class L1Loss(nn.Module):
         self.loss_weight = loss_weight
         self.reduction = reduction
 
-    def forward(self, pred, target, weight=None, **kwargs):
+    # def forward(self, pred, target, weight=None, **kwargs):
+    def construct(self, pred, target, weight=None, **kwargs):
         """
         Args:
             pred (Tensor): of shape (N, C, H, W). Predicted tensor.
@@ -69,7 +74,8 @@ class L1Loss(nn.Module):
 
 
 @LOSS_REGISTRY.register()
-class MSELoss(nn.Module):
+# class MSELoss(nn.Module):
+class MSELoss(nn.Cell):
     """MSE (L2) loss.
 
     Args:
@@ -86,7 +92,8 @@ class MSELoss(nn.Module):
         self.loss_weight = loss_weight
         self.reduction = reduction
 
-    def forward(self, pred, target, weight=None, **kwargs):
+    # def forward(self, pred, target, weight=None, **kwargs):
+    def construct(self, pred, target, weight=None, **kwargs):
         """
         Args:
             pred (Tensor): of shape (N, C, H, W). Predicted tensor.
@@ -97,7 +104,8 @@ class MSELoss(nn.Module):
 
 
 @LOSS_REGISTRY.register()
-class CharbonnierLoss(nn.Module):
+# class CharbonnierLoss(nn.Module):
+class CharbonnierLoss(nn.Cell):
     """Charbonnier loss (one variant of Robust L1Loss, a differentiable
     variant of L1Loss).
 
@@ -143,7 +151,8 @@ class WeightedTVLoss(L1Loss):
             raise ValueError(f'Unsupported reduction mode: {reduction}. Supported ones are: mean | sum')
         super(WeightedTVLoss, self).__init__(loss_weight=loss_weight, reduction=reduction)
 
-    def forward(self, pred, weight=None):
+    # def forward(self, pred, weight=None):
+    def construct(self, pred, weight=None):
         if weight is None:
             y_weight = None
             x_weight = None
@@ -160,7 +169,8 @@ class WeightedTVLoss(L1Loss):
 
 
 @LOSS_REGISTRY.register()
-class PerceptualLoss(nn.Module):
+# class PerceptualLoss(nn.Module):
+class PerceptualLoss(nn.Cell):
     """Perceptual loss with commonly used style loss.
 
     Args:
@@ -211,7 +221,8 @@ class PerceptualLoss(nn.Module):
         else:
             raise NotImplementedError(f'{criterion} criterion has not been supported.')
 
-    def forward(self, x, gt):
+    # def forward(self, x, gt):
+    def construct(self, x, gt):
         """Forward function.
 
         Args:
@@ -270,7 +281,8 @@ class PerceptualLoss(nn.Module):
 
 
 @LOSS_REGISTRY.register()
-class GANLoss(nn.Module):
+# class GANLoss(nn.Module):
+class GANLoss(nn.Cell):
     """Define GAN loss.
 
     Args:
@@ -348,7 +360,9 @@ class GANLoss(nn.Module):
         target_val = (self.real_label_val if target_is_real else self.fake_label_val)
         return input.new_ones(input.size()) * target_val
 
-    def forward(self, input, target_is_real, is_disc=False):
+    # def forward(self, input, target_is_real, is_disc=False):
+    def construct(self, input, target_is_real, is_disc=False):
+
         """
         Args:
             input (Tensor): The input for the loss module, i.e., the network
@@ -471,7 +485,8 @@ def gradient_penalty_loss(discriminator, real_data, fake_data, weight=None):
 
 
 @LOSS_REGISTRY.register()
-class GANFeatLoss(nn.Module):
+# class GANFeatLoss(nn.Module):
+class GANFeatLoss(nn.Cell):
     """Define feature matching loss for gans
 
     Args:

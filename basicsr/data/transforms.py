@@ -1,7 +1,8 @@
 import cv2
 import random
-import torch
-
+# import torch
+import mindspore as ms
+from mindspore import ops
 
 def mod_crop(img, scale):
     """Mod crop images, used during testing.
@@ -54,7 +55,9 @@ def paired_random_crop(img_gts, img_lqs, gt_patch_size, scale, gt_path=None):
         img_lqs = [img_lqs]
 
     # determine input type: Numpy array or Tensor
-    input_type = 'Tensor' if torch.is_tensor(img_gts[0]) else 'Numpy'
+    # input_type = 'Tensor' if torch.is_tensor(img_gts[0]) else 'Numpy'
+    input_type = 'Tensor' if ops.is_tensor(img_gts[0]) else 'Numpy'
+        
 
     if input_type == 'Tensor':
         h_lq, w_lq = img_lqs[0].size()[-2:]

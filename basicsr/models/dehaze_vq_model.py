@@ -2,9 +2,10 @@ from collections import OrderedDict
 from os import path as osp
 from tqdm import tqdm
 
-import torch
+# import torch
 import torchvision.utils as tvu
-
+import mindspore as ms
+from mindspore import ops
 from basicsr.archs import build_network
 from basicsr.losses import build_loss
 from basicsr.utils import get_root_logger, imwrite, tensor2img, img2tensor
@@ -19,11 +20,10 @@ import pyiqa
 class VQDehazeModel(BaseModel):
     def __init__(self, opt):
         super().__init__(opt)
-
          # define network
         self.net_g = build_network(opt['network_g'])
-        self.net_g = self.model_to_device(self.net_g)
-
+        # self.net_g = self.model_to_device(self.net_g)
+        
         # define metric functions 
         if self.opt['val'].get('metrics') is not None:
             self.metric_funcs = {}
@@ -31,8 +31,10 @@ class VQDehazeModel(BaseModel):
                 mopt = opt.copy()
                 name = mopt.pop('type', None)
                 mopt.pop('better', None)
-                self.metric_funcs[name] = pyiqa.create_metric(name, device=self.device, **mopt)
+                # self.metric_funcs[name] = pyiqa.create_metric(name, device=self.device, **mopt)
+                self.metric_funcs[name] = pyiqa.create_metric(name, **mopt)
 
+       
         # load pre-trained HQ ckpt, frozen decoder and codebook 
         self.LQ_stage = self.opt['network_g'].get('LQ_stage', False) 
         if self.LQ_stage:
@@ -121,13 +123,16 @@ class VQDehazeModel(BaseModel):
 
         # optimizer g
         optim_type = train_opt['optim_g'].pop('type')
-        optim_class = getattr(torch.optim, optim_type)
+        # optim_class = getattr(torch.optim, optim_type)
+        optim_class = getattr(ms.optim, optim_type)
+
         self.optimizer_g = optim_class(optim_params, **train_opt['optim_g'])
         self.optimizers.append(self.optimizer_g)
 
         # optimizer d
         optim_type = train_opt['optim_d'].pop('type')
-        optim_class = getattr(torch.optim, optim_type)
+        # optim_class = getattr(torch.optim, optim_type)
+        optim_class = getattr(ms.optim, optim_type)
         self.optimizer_d = optim_class(self.net_d.parameters(), **train_opt['optim_d'])
         self.optimizers.append(self.optimizer_d)
 
@@ -144,8 +149,8 @@ class VQDehazeModel(BaseModel):
         self.optimizer_g.zero_grad()
 
         if self.LQ_stage:
-            with torch.no_grad():
-                self.gt_rec, _, _,  _, _, quant_gt, gt_indices = self.net_hq(self.gt)
+            # with torch.no_grad():
+            self.gt_rec, _, _,  _, _, quant_gt, gt_indices = self.net_hq(self.gt)
             self.lq.requires_grad = True
             self.output, self.output_residual, l_codebook, l_semantic, quant_g, _, _ = self.net_g(self.lq, gt_indices) 
         else:
@@ -163,7 +168,8 @@ class VQDehazeModel(BaseModel):
             loss_dict['l_codebook'] = l_codebook.mean()
 
         # semantic cluster loss, only for LQ stage!
-        if train_opt.get('semantic_opt', None) and isinstance(l_semantic, torch.Tensor):
+        # if train_opt.get('semantic_opt', None) and isinstance(l_semantic, torch.Tensor):
+        if train_opt.get('semantic_opt', None) and isinstance(l_semantic, ms.Tensor):
             l_semantic *= train_opt['semantic_opt']['loss_weight'] 
             l_semantic = l_semantic.mean()
             l_g_total += l_semantic
@@ -207,13 +213,16 @@ class VQDehazeModel(BaseModel):
             real_d_pred = self.net_d(quant_gt)
             l_d_real = self.cri_gan(real_d_pred, True, is_disc=True)
             loss_dict['l_d_real'] = l_d_real
-            loss_dict['out_d_real'] = torch.mean(real_d_pred.detach())
+            # loss_dict['out_d_real'] = torch.mean(real_d_pred.detach())
+            loss_dict['out_d_real'] = ops.mean(real_d_pred.detach())
             l_d_real.backward()
             # fake
             fake_d_pred = self.net_d(quant_g.detach())
             l_d_fake = self.cri_gan(fake_d_pred, False, is_disc=True)
             loss_dict['l_d_fake'] = l_d_fake
-            loss_dict['out_d_fake'] = torch.mean(fake_d_pred.detach())
+            # loss_dict['out_d_fake'] = torch.mean(fake_d_pred.detach())
+            loss_dict['out_d_fake'] = ops.mean(fake_d_pred.detach())
+
             l_d_fake.backward()
             self.optimizer_d.step()
 
@@ -269,7 +278,7 @@ class VQDehazeModel(BaseModel):
             # tentative for out of GPU memory
             del self.lq
             del self.output
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
 
             if save_img:
                 if self.opt['is_train']:
@@ -350,11 +359,12 @@ class VQDehazeModel(BaseModel):
     def vis_single_code(self, up_factor=2):
         net_g = self.get_bare_model(self.net_g)
         codenum = self.opt['network_g']['codebook_params'][0][1]
-        with torch.no_grad():
-            code_idx = torch.arange(codenum).reshape(codenum, 1, 1, 1)
-            code_idx = code_idx.repeat(1, 1, up_factor, up_factor)
-            output_img = net_g.decode_indices(code_idx) 
-            output_img = tvu.make_grid(output_img, nrow=32)
+        # with torch.no_grad():
+        # code_idx = torch.arange(codenum).reshape(codenum, 1, 1, 1)
+        code_idx = ops.arange(codenum).reshape(codenum, 1, 1, 1)
+        code_idx = code_idx.repeat(1, 1, up_factor, up_factor)
+        output_img = net_g.decode_indices(code_idx) 
+        output_img = tvu.make_grid(output_img, nrow=32)
 
         return output_img.unsqueeze(0)
 

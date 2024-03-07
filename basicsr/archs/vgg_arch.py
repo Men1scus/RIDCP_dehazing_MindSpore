@@ -1,12 +1,15 @@
 import os
-import torch
+# import torch
+import mindspore as ms
 from collections import OrderedDict
-from torch import nn as nn
-from torchvision.models import vgg as vgg
-
+# from torch import nn as nn
+from mindspore import nn 
+# from torchvision.models import vgg as vgg
+from mindcv.models import vgg as vgg
 from basicsr.utils.registry import ARCH_REGISTRY
 
-VGG_PRETRAIN_PATH = 'experiments/pretrained_models/vgg19-dcbb9e9d.pth'
+# VGG_PRETRAIN_PATH = 'experiments/pretrained_models/vgg19-dcbb9e9d.pth'
+VGG_PRETRAIN_PATH = 'pretrained_models/vgg19-bedee7b6.ckpt'
 NAMES = {
     'vgg11': [
         'conv1_1', 'relu1_1', 'pool1', 'conv2_1', 'relu2_1', 'pool2', 'conv3_1', 'relu3_1', 'conv3_2', 'relu3_2',
@@ -52,7 +55,9 @@ def insert_bn(names):
 
 
 @ARCH_REGISTRY.register()
-class VGGFeatureExtractor(nn.Module):
+# class VGGFeatureExtractor(nn.Module):
+class VGGFeatureExtractor(nn.Cell):
+
     """VGG network for feature extraction.
 
     In this implementation, we allow users to choose whether use normalization
@@ -102,8 +107,10 @@ class VGGFeatureExtractor(nn.Module):
 
         if os.path.exists(VGG_PRETRAIN_PATH):
             vgg_net = getattr(vgg, vgg_type)(pretrained=False)
-            state_dict = torch.load(VGG_PRETRAIN_PATH, map_location=lambda storage, loc: storage)
-            vgg_net.load_state_dict(state_dict)
+            # state_dict = torch.load(VGG_PRETRAIN_PATH, map_location=lambda storage, loc: storage)
+            # state_dict = ms.load_checkpoint(VGG_PRETRAIN_PATH, map_location=lambda storage, loc: storage)
+            ms.load_checkpoint(VGG_PRETRAIN_PATH, vgg_net)
+            # vgg_net.load_state_dict(state_dict)
         else:
             vgg_net = getattr(vgg, vgg_type)(pretrained=True)
 
@@ -121,7 +128,9 @@ class VGGFeatureExtractor(nn.Module):
             else:
                 modified_net[k] = v
 
-        self.vgg_net = nn.Sequential(modified_net)
+        # self.vgg_net = nn.Sequential(modified_net)
+        self.vgg_net = nn.SequentialCell(modified_net)
+                
 
         if not requires_grad:
             self.vgg_net.eval()
@@ -134,11 +143,17 @@ class VGGFeatureExtractor(nn.Module):
 
         if self.use_input_norm:
             # the mean is for image with range [0, 1]
-            self.register_buffer('mean', torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
-            # the std is for image with range [0, 1]
-            self.register_buffer('std', torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+            # self.register_buffer('mean', torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+            # # the std is for image with range [0, 1]
+            # self.register_buffer('std', torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
-    def forward(self, x):
+            # the mean is for image with range [0, 1]
+            self.register_buffer('mean', ms.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+            # the std is for image with range [0, 1]
+            self.register_buffer('std', ms.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+    # def forward(self, x):
+    def construct(self, x):
         """Forward function.
 
         Args:

@@ -1,6 +1,8 @@
-import torch
-import torch.nn.functional as F
-from torch import nn as nn
+# import torch
+# import torch.nn.functional as F
+# from torch import nn as nn
+import mindspore as ms
+from mindspore import ops, nn
 import numpy as np
 import math
 
@@ -21,13 +23,20 @@ class DCNv2Pack(ModulatedDeformConvPack):
         Delving Deep into Deformable Alignment in Video Super-Resolution.
     """
 
-    def forward(self, x, feat):
+    # def forward(self, x, feat):
+    def construct(self, x, feat):
         out = self.conv_offset(feat)
-        o1, o2, mask = torch.chunk(out, 3, dim=1)
-        offset = torch.cat((o1, o2), dim=1)
-        mask = torch.sigmoid(mask)
+        # o1, o2, mask = torch.chunk(out, 3, dim=1)
+        # offset = torch.cat((o1, o2), dim=1)
+        # mask = torch.sigmoid(mask)
+        
+        o1, o2, mask = ops.chunk(out, 3, axis=1)
+        offset = ops.cat((o1, o2), axis=1)
+        mask = ops.sigmoid(mask)
 
-        offset_absmean = torch.mean(torch.abs(offset))
+        # offset_absmean = torch.mean(torch.abs(offset))
+        offset_absmean = ops.mean(ops.abs(offset))
+
         if offset_absmean > 50:
             logger = get_root_logger()
             logger.warning(f'Offset abs mean is {offset_absmean}, larger than 50.')
@@ -35,7 +44,8 @@ class DCNv2Pack(ModulatedDeformConvPack):
         return modulated_deform_conv(x, offset, mask, self.weight, self.bias, self.stride, self.padding,
                                          self.dilation, self.groups, self.deformable_groups)
 
-class VectorQuantizer(nn.Module):
+# class VectorQuantizer(nn.Module):
+class VectorQuantizer(nn.Cell):
     """
     see https://github.com/MishaLaskin/vqvae/blob/d761a999e2267766400dc646d82d3ac3657771d4/models/quantizer.py
     ____________________________________________
@@ -56,7 +66,8 @@ class VectorQuantizer(nn.Module):
         self.use_weight = use_weight
         self.weight_alpha = weight_alpha
         if self.use_weight:
-            self.weight = nn.Parameter(torch.load(weight_path))
+            # self.weight = nn.Parameter(torch.load(weight_path))
+            self.weight = ms.Parameter(ms.load_checkpoint(weight_path))
             self.weight.requires_grad = False 
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
     
@@ -64,9 +75,12 @@ class VectorQuantizer(nn.Module):
         if x.shape == y.shape:
             return (x - y) ** 2
         else:
-            return torch.sum(x ** 2, dim=1, keepdim=True) + \
-                    torch.sum(y**2, dim=1) - 2 * \
-                    torch.matmul(x, y.t())
+            # return torch.sum(x ** 2, dim=1, keepdim=True) + \
+            #         torch.sum(y**2, dim=1) - 2 * \
+            #         torch.matmul(x, y.t())
+            return ops.sum(x ** 2, dim=1, keepdim=True) + \
+                    ops.sum(y**2, dim=1) - 2 * \
+                    ops.matmul(x, y.t())
     
     def gram_loss(self, x, y):
         b, h, w, c = x.shape
@@ -78,7 +92,8 @@ class VectorQuantizer(nn.Module):
     
         return (gmx - gmy).square().mean()
 
-    def forward(self, z, gt_indices=None, current_iter=None, weight_alpha=None):
+    # def forward(self, z, gt_indices=None, current_iter=None, weight_alpha=None):
+    def construct(self, z, gt_indices=None, current_iter=None, weight_alpha=None):
         """
         Args:
             z: input features to be quantized, z (continuous) -> z_q (discrete)
@@ -95,29 +110,38 @@ class VectorQuantizer(nn.Module):
         if self.use_weight and self.LQ_stage:
             if weight_alpha is not None:
                 self.weight_alpha = weight_alpha
-            d = d * torch.exp(self.weight_alpha * self.weight)
+            # d = d * torch.exp(self.weight_alpha * self.weight)
+            d = d * ops.exp(self.weight_alpha * self.weight)
+                
         
         # find closest encodings
-        min_encoding_indices = torch.argmin(d, dim=1).unsqueeze(1)
-        min_encodings = torch.zeros(min_encoding_indices.shape[0], codebook.shape[0]).to(z)
+        # min_encoding_indices = torch.argmin(d, dim=1).unsqueeze(1)
+        # min_encodings = torch.zeros(min_encoding_indices.shape[0], codebook.shape[0]).to(z)
+        min_encoding_indices = ops.argmin(d, axis=1).unsqueeze(1)
+        min_encodings = ops.zeros(min_encoding_indices.shape[0], codebook.shape[0]).to(z)
         min_encodings.scatter_(1, min_encoding_indices, 1)
 
         if gt_indices is not None:
             gt_indices = gt_indices.reshape(-1)
 
             gt_min_indices = gt_indices.reshape_as(min_encoding_indices)
-            gt_min_onehot = torch.zeros(gt_min_indices.shape[0], codebook.shape[0]).to(z)
+            # gt_min_onehot = torch.zeros(gt_min_indices.shape[0], codebook.shape[0]).to(z)
+            gt_min_onehot = ops.zeros(gt_min_indices.shape[0], codebook.shape[0]).to(z)
             gt_min_onehot.scatter_(1, gt_min_indices, 1)
 
-            z_q_gt = torch.matmul(gt_min_onehot, codebook)
+            # z_q_gt = torch.matmul(gt_min_onehot, codebook)
+            z_q_gt = ops.matmul(gt_min_onehot, codebook)
             z_q_gt = z_q_gt.view(z.shape)
 
         # get quantized latent vectors
-        z_q = torch.matmul(min_encodings, codebook)
+        # z_q = torch.matmul(min_encodings, codebook)
+        z_q = ops.matmul(min_encodings, codebook)
         z_q = z_q.view(z.shape)
 
-        e_latent_loss = torch.mean((z_q.detach() - z)**2)
-        q_latent_loss = torch.mean((z_q - z.detach())**2)
+        # e_latent_loss = torch.mean((z_q.detach() - z)**2)
+        # q_latent_loss = torch.mean((z_q - z.detach())**2)
+        e_latent_loss = ops.mean((z_q.detach() - z)**2)
+        q_latent_loss = ops.mean((z_q - z.detach())**2)
 
         if self.LQ_stage and gt_indices is not None:
             # codebook_loss = self.dist(z_q, z_q_gt.detach()).mean() \
@@ -141,27 +165,33 @@ class VectorQuantizer(nn.Module):
         b, _, h, w = indices.shape
 
         indices = indices.flatten().to(self.embedding.weight.device)
-        min_encodings = torch.zeros(indices.shape[0], self.n_e).to(indices)
+        # min_encodings = torch.zeros(indices.shape[0], self.n_e).to(indices)
+        min_encodings = ops.zeros(indices.shape[0], self.n_e).to(indices)
         min_encodings.scatter_(1, indices[:,None], 1)
 
         # get quantized latent vectors
-        z_q = torch.matmul(min_encodings.float(), self.embedding.weight)        
+        # z_q = torch.matmul(min_encodings.float(), self.embedding.weight)        
+        z_q = ops.matmul(min_encodings.float(), self.embedding.weight)        
+
         z_q = z_q.view(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
         return z_q
 
-class SwinLayers(nn.Module):
+# class SwinLayers(nn.Module):
+class SwinLayers(nn.Cell):
     def __init__(self, input_resolution=(32, 32), embed_dim=256, 
                 blk_depth=6,
                 num_heads=8,
                 window_size=8,
                 **kwargs):
         super().__init__()
-        self.swin_blks = nn.ModuleList()
+        # self.swin_blks = nn.ModuleList()
+        self.swin_blks = nn.CellList()
         for i in range(4):
             layer = RSTB(embed_dim, input_resolution, blk_depth, num_heads, window_size, patch_size=1, **kwargs)
             self.swin_blks.append(layer)
     
-    def forward(self, x):
+    # def forward(self, x):
+    def construct(self, x):
         b, c, h, w = x.shape
         x = x.reshape(b, c, h*w).transpose(1, 2)
         for m in self.swin_blks:
@@ -170,7 +200,8 @@ class SwinLayers(nn.Module):
         return x
 
 
-class MultiScaleEncoder(nn.Module):
+# class MultiScaleEncoder(nn.Module):
+class MultiScaleEncoder(nn.Cell):
     def __init__(self,
                  in_channel,
                  max_depth,
@@ -185,26 +216,31 @@ class MultiScaleEncoder(nn.Module):
         self.LQ_stage = LQ_stage
         ksz = 3
 
-        self.in_conv = nn.Conv2d(in_channel, channel_query_dict[input_res], 4, padding=1)
+        self.in_conv = nn.Conv2d(in_channel, channel_query_dict[input_res], 4, padding=1, pad_mode='pad', has_bias=True)
 
-        self.blocks = nn.ModuleList()
-        self.up_blocks = nn.ModuleList()
+        # self.blocks = nn.ModuleList()
+        # self.up_blocks = nn.ModuleList()
+        self.blocks = nn.CellList()
+        self.up_blocks = nn.CellList()
         self.max_depth = max_depth
         res = input_res
         for i in range(max_depth):
             in_ch, out_ch = channel_query_dict[res], channel_query_dict[res // 2]
             tmp_down_block = [
-                nn.Conv2d(in_ch, out_ch, ksz, stride=2, padding=1),
+                # nn.Conv2d(in_ch, out_ch, ksz, stride=2, padding=1),
+                nn.Conv2d(in_ch, out_ch, ksz, stride=2, padding=1, pad_mode='pad', has_bias=True),
                 ResBlock(out_ch, out_ch, norm_type, act_type),
                 ResBlock(out_ch, out_ch, norm_type, act_type),
             ]
-            self.blocks.append(nn.Sequential(*tmp_down_block))
+            # self.blocks.append(nn.Sequential(*tmp_down_block))
+            self.blocks.append(nn.SequentialCell(*tmp_down_block))
             res = res // 2
 
         if LQ_stage: 
             self.blocks.append(SwinLayers(**swin_opts))
 
-    def forward(self, input):
+    # def forward(self, input):
+    def construct(self, input):
         # input.requires_grad = True
         x = self.in_conv(input)
         # if self.LQ_stage:
@@ -214,13 +250,14 @@ class MultiScaleEncoder(nn.Module):
         #     print('first output:', x.requires_grad)
 
         for idx, m in enumerate(self.blocks):
-            with torch.backends.cudnn.flags(enabled=False):
-                x = m(x)
+            # with torch.backends.cudnn.flags(enabled=False):
+            x = m(x)
 
         return x
 
 
-class DecoderBlock(nn.Module):
+# class DecoderBlock(nn.Module):
+class DecoderBlock(nn.Cell):
 
     def __init__(self, in_channel, out_channel, norm_type='gn', act_type='leakyrelu'):
         super().__init__()
@@ -228,30 +265,38 @@ class DecoderBlock(nn.Module):
         self.block = []
         self.block += [
             nn.Upsample(scale_factor=2),
-            nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+            # nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+            nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1, pad_mode='pad', has_bias=True),
             ResBlock(out_channel, out_channel, norm_type, act_type),
             ResBlock(out_channel, out_channel, norm_type, act_type),
         ]
 
-        self.block = nn.Sequential(*self.block)
+        # self.block = nn.Sequential(*self.block)
+        self.block = nn.SequentialCell(*self.block)
 
-    def forward(self, input):
+    # def forward(self, input):
+    def construct(self, input):
         return self.block(input)
 
-class WarpBlock(nn.Module):
+# class WarpBlock(nn.Module):
+class WarpBlock(nn.Cell):
     def __init__(self, in_channel):
         super().__init__()
-        self.offset = nn.Conv2d(in_channel * 2, in_channel, 3, stride=1, padding=1)
+        # self.offset = nn.Conv2d(in_channel * 2, in_channel, 3, stride=1, padding=1)
+        self.offset = nn.Conv2d(in_channel * 2, in_channel, 3, stride=1, padding=1, pad_mode='pad', has_bias=True)
         self.dcn = DCNv2Pack(in_channel, in_channel, 3, padding=1, deformable_groups=4)
 
-    def forward(self, x_vq, x_residual):
-        x_residual = self.offset(torch.cat([x_vq, x_residual], dim=1))
+    # def forward(self, x_vq, x_residual):
+    def construct(self, x_vq, x_residual):
+        # x_residual = self.offset(torch.cat([x_vq, x_residual], dim=1))
+        x_residual = self.offset(ops.cat([x_vq, x_residual], axis=1))
         feat_after_warp = self.dcn(x_vq, x_residual)
 
         return feat_after_warp
 
 
-class MultiScaleDecoder(nn.Module):
+# class MultiScaleDecoder(nn.Module):
+class MultiScaleDecoder(nn.Cell):
     def __init__(self,
                  in_channel,
                  max_depth,
@@ -265,14 +310,22 @@ class MultiScaleDecoder(nn.Module):
         super().__init__()
         self.only_residual = only_residual
         self.use_warp = use_warp
-        self.upsampler = nn.ModuleList()
-        self.warp = nn.ModuleList()
+        # self.upsampler = nn.ModuleList()
+        # self.warp = nn.ModuleList()
+        self.upsampler = nn.CellList()
+        self.warp = nn.CellList()
         res =  input_res // (2 ** max_depth)
         for i in range(max_depth):
             in_channel, out_channel = channel_query_dict[res], channel_query_dict[res * 2]
-            self.upsampler.append(nn.Sequential(
+            # self.upsampler.append(nn.Sequential(
+            #     nn.Upsample(scale_factor=2),
+            #     nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+            #     ResBlock(out_channel, out_channel, norm_type, act_type),
+            #     ResBlock(out_channel, out_channel, norm_type, act_type),
+            #     )
+            self.upsampler.append(nn.SequentialCell(
                 nn.Upsample(scale_factor=2),
-                nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1),
+                nn.Conv2d(in_channel, out_channel, 3, stride=1, padding=1, pad_mode='pad', has_bias=True),
                 ResBlock(out_channel, out_channel, norm_type, act_type),
                 ResBlock(out_channel, out_channel, norm_type, act_type),
                 )
@@ -280,25 +333,27 @@ class MultiScaleDecoder(nn.Module):
             self.warp.append(WarpBlock(out_channel))
             res = res * 2
 
-    def forward(self, input, code_decoder_output):
+    # def forward(self, input, code_decoder_output):
+    def construct(self, input, code_decoder_output):
         x = input
         for idx, m in enumerate(self.upsampler):
-            with torch.backends.cudnn.flags(enabled=False):
-                if not self.only_residual:
-                    x = m(x)
-                    if self.use_warp:
-                        x_vq = self.warp[idx](code_decoder_output[idx], x)
-                        # print(idx, x.mean(), x_vq.mean())
-                        x = x + x_vq * (x.mean() / x_vq.mean())
-                    else:
-                        x = x + code_decoder_output[idx]
+            # with torch.backends.cudnn.flags(enabled=False):
+            if not self.only_residual:
+                x = m(x)
+                if self.use_warp:
+                    x_vq = self.warp[idx](code_decoder_output[idx], x)
+                    # print(idx, x.mean(), x_vq.mean())
+                    x = x + x_vq * (x.mean() / x_vq.mean())
                 else:
-                    x = m(x)
+                    x = x + code_decoder_output[idx]
+            else:
+                x = m(x)
         # print()
         return x
 
 @ARCH_REGISTRY.register()
-class VQWeightDehazeNet(nn.Module):
+# class VQWeightDehazeNet(nn.Module):
+class VQWeightDehazeNet(nn.Cell):
     def __init__(self,
                  *,
                  in_channel=3,
@@ -363,19 +418,25 @@ class VQWeightDehazeNet(nn.Module):
 
 
         # build decoder
-        self.decoder_group = nn.ModuleList()
+        # self.decoder_group = nn.ModuleList()
+        self.decoder_group = nn.CellList()
         for i in range(self.max_depth):
             res = gt_resolution // 2**self.max_depth * 2**i
             in_ch, out_ch = channel_query_dict[res], channel_query_dict[res * 2]
             self.decoder_group.append(DecoderBlock(in_ch, out_ch, norm_type, act_type))
 
-        self.out_conv = nn.Conv2d(out_ch, 3, 3, 1, 1)
-        self.residual_conv = nn.Conv2d(out_ch, 3, 3, 1, 1)
+        # self.out_conv = nn.Conv2d(out_ch, 3, 3, 1, 1)
+        # self.residual_conv = nn.Conv2d(out_ch, 3, 3, 1, 1)
+        self.out_conv = nn.Conv2d(out_ch, 3, 3, 1, padding=1, pad_mode='pad', has_bias=True)
+        self.residual_conv = nn.Conv2d(out_ch, 3, 3, 1, padding=1, pad_mode='pad', has_bias=True)
 
         # build multi-scale vector quantizers 
-        self.quantize_group = nn.ModuleList()
-        self.before_quant_group = nn.ModuleList()
-        self.after_quant_group = nn.ModuleList()
+        # self.quantize_group = nn.ModuleList()
+        # self.before_quant_group = nn.ModuleList()
+        # self.after_quant_group = nn.ModuleList()
+        self.quantize_group = nn.CellList()
+        self.before_quant_group = nn.CellList()
+        self.after_quant_group = nn.CellList()
 
         for scale in range(0, codebook_params.shape[0]):
             quantize = VectorQuantizer(
@@ -397,7 +458,9 @@ class VQWeightDehazeNet(nn.Module):
                 comb_quant_in_ch1 = codebook_emb_dim[scale - 1]
                 comb_quant_in_ch2 = codebook_emb_dim[scale]
 
-            self.before_quant_group.append(nn.Conv2d(quant_conv_in_ch, codebook_emb_dim[scale], 1))
+            # self.before_quant_group.append(nn.Conv2d(quant_conv_in_ch, codebook_emb_dim[scale], 1))
+            self.before_quant_group.append(nn.Conv2d(quant_conv_in_ch, int(codebook_emb_dim[scale]), 1, has_bias=True))
+                
             self.after_quant_group.append(CombineQuantBlock(comb_quant_in_ch1, comb_quant_in_ch2, scale_in_ch))
 
         # semantic loss for HQ pretrain stage
@@ -417,8 +480,8 @@ class VQWeightDehazeNet(nn.Module):
         enc_feats = self.multiscale_encoder(input)
 
         if self.use_semantic_loss:
-            with torch.no_grad():
-                vgg_feat = self.vgg_feat_extractor(input)[self.vgg_feat_layer]
+            # with torch.no_grad():
+            vgg_feat = self.vgg_feat_extractor(input)[self.vgg_feat_layer]
 
         codebook_loss_list = []
         indices_list = []
@@ -436,7 +499,8 @@ class VQWeightDehazeNet(nn.Module):
             cur_res = self.gt_res // 2**self.max_depth * 2**i
             if cur_res in self.codebook_scale:  # needs to perform quantize
                 if prev_dec_feat is not None:
-                    before_quant_feat = torch.cat((x, prev_dec_feat), dim=1)
+                    # before_quant_feat = torch.cat((x, prev_dec_feat), dim=1)
+                    before_quant_feat = ops.cat((x, prev_dec_feat), axis=1)
                 else:
                     before_quant_feat = x
                 feat_to_quant = self.before_quant_group[quant_idx](before_quant_feat)
@@ -450,7 +514,8 @@ class VQWeightDehazeNet(nn.Module):
 
                 if self.use_semantic_loss:
                     semantic_z_quant = self.conv_semantic(z_quant)
-                    semantic_loss = F.mse_loss(semantic_z_quant, vgg_feat)
+                    # semantic_loss = F.mse_loss(semantic_z_quant, vgg_feat)
+                    semantic_loss = ops.mse_loss(semantic_z_quant, vgg_feat)
                     semantic_loss_list.append(semantic_loss)
                 
                 if not self.use_quantize:
@@ -497,7 +562,7 @@ class VQWeightDehazeNet(nn.Module):
         out_img = self.out_conv(x)
         return out_img
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def test_tile(self, input, tile_size=240, tile_pad=16):
         # return self.test(input)
         """It will first crop input images to tiles, and then process each tile.
@@ -559,7 +624,7 @@ class VQWeightDehazeNet(nn.Module):
                                                                   output_start_x_tile:output_end_x_tile]
         return output
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def test(self, input, weight_alpha=None):
         org_use_semantic_loss = self.use_semantic_loss
         self.use_semantic_loss = False
@@ -569,8 +634,10 @@ class VQWeightDehazeNet(nn.Module):
         _, _, h_old, w_old = input.shape
         h_pad = (h_old // wsz + 1) * wsz - h_old
         w_pad = (w_old // wsz + 1) * wsz - w_old
-        input = torch.cat([input, torch.flip(input, [2])], 2)[:, :, :h_old + h_pad, :]
-        input = torch.cat([input, torch.flip(input, [3])], 3)[:, :, :, :w_old + w_pad]
+        # input = torch.cat([input, torch.flip(input, [2])], 2)[:, :, :h_old + h_pad, :]
+        # input = torch.cat([input, torch.flip(input, [3])], 3)[:, :, :, :w_old + w_pad]
+        input = ops.cat([input, ops.flip(input, [2])], 2)[:, :, :h_old + h_pad, :]
+        input = ops.cat([input, ops.flip(input, [3])], 3)[:, :, :, :w_old + w_pad]
 
         output_vq, output, _, _, _, after_quant, index = self.encode_and_decode(input, None, None, weight_alpha=weight_alpha)
 
@@ -582,7 +649,8 @@ class VQWeightDehazeNet(nn.Module):
         self.use_semantic_loss = org_use_semantic_loss 
         return output, index
 
-    def forward(self, input, gt_indices=None, weight_alpha=None):
+    # def forward(self, input, gt_indices=None, weight_alpha=None):
+    def construct(self, input, gt_indices=None, weight_alpha=None):
 
         if gt_indices is not None:
             # in LQ training stage, need to pass GT indices for supervise.

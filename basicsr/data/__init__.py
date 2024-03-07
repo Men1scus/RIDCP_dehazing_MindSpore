@@ -1,8 +1,11 @@
 import importlib
 import numpy as np
 import random
-import torch
-import torch.utils.data
+# import torch
+# import torch.utils.data
+import mindspore as ms
+from mindspore import dataset as ds
+
 from copy import deepcopy
 from functools import partial
 from os import path as osp
@@ -63,27 +66,54 @@ def build_dataloader(dataset, dataset_opt, num_gpu=1, dist=False, sampler=None, 
             multiplier = 1 if num_gpu == 0 else num_gpu
             batch_size = dataset_opt['batch_size_per_gpu'] * multiplier
             num_workers = dataset_opt['num_worker_per_gpu'] * multiplier
+        # dataloader_args = dict(
+        #     dataset=dataset,
+        #     batch_size=batch_size,
+        #     shuffle=False,
+        #     num_workers=num_workers,
+        #     sampler=sampler,
+        #     drop_last=True)
+            
         dataloader_args = dict(
-            dataset=dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            sampler=sampler,
-            drop_last=True)
+            # source=dataset, # 参数名不同
+            source=dataset, # 参数名不同
+            # batch_size=batch_size, MindSpore通过 mindspore.dataset.batch 操作支持
+            # shuffle=False, # 默认值不同
+            # num_parallel_workers=num_workers, # 参数名不同 # 报错 ValueError: num_parallel_workers exceeds the boundary between 1 and 12!
+            sampler=sampler, # 一致
+            # drop_last=True # MindSpore通过 mindspore.dataset.batch 操作支持
+            )    
+        
         if sampler is None:
             dataloader_args['shuffle'] = True
-        dataloader_args['worker_init_fn'] = partial(
-            worker_init_fn, num_workers=num_workers, rank=rank, seed=seed) if seed is not None else None
+            
+# MindSpore不支持
+        # dataloader_args['worker_init_fn'] = partial(
+        #     worker_init_fn, num_workers=num_workers, rank=rank, seed=seed) if seed is not None else None
+        
     elif phase in ['val', 'test']:  # validation
-        dataloader_args = dict(dataset=dataset, batch_size=1, shuffle=False, num_workers=0)
+        batch_size = dataset_opt.get('batch_size_per_gpu', 1)
+        # dataloader_args = dict(dataset=dataset, batch_size=1, shuffle=False, num_workers=0)
+        dataloader_args = dict(
+            source=dataset, 
+            # batch_size=1, MindSpore通过 mindspore.dataset.batch 操作支持
+            shuffle=False, 
+            # num_workers=0
+            num_parallel_workers=1
+            )
+
     else:
         raise ValueError(f'Wrong dataset phase: {phase}. ' "Supported ones are 'train', 'val' and 'test'.")
 
-    dataloader_args['pin_memory'] = dataset_opt.get('pin_memory', False)
-    dataloader_args['persistent_workers'] = dataset_opt.get('persistent_workers', False)
+# MindSpore不支持
+    # dataloader_args['pin_memory'] = dataset_opt.get('pin_memory', False)
+# MindSpore通过 create_tuple_iterator 的 num_epoch 参数支持
+    # dataloader_args['persistent_workers'] = dataset_opt.get('persistent_workers', False)
+    persistent_workers = dataset_opt.get('persistent_workers', False)
 
     prefetch_mode = dataset_opt.get('prefetch_mode')
-    if prefetch_mode == 'cpu':  # CPUPrefetcher
+    # if prefetch_mode == 'cpu':  # CPUPrefetcher
+    if prefetch_mode == 'CPU':  # CPUPrefetcher
         num_prefetch_queue = dataset_opt.get('num_prefetch_queue', 1)
         logger = get_root_logger()
         logger.info(f'Use {prefetch_mode} prefetch dataloader: num_prefetch_queue = {num_prefetch_queue}')
@@ -91,7 +121,16 @@ def build_dataloader(dataset, dataset_opt, num_gpu=1, dist=False, sampler=None, 
     else:
         # prefetch_mode=None: Normal dataloader
         # prefetch_mode='cuda': dataloader for CUDAPrefetcher
-        return torch.utils.data.DataLoader(**dataloader_args)
+        # return torch.utils.data.DataLoader(**dataloader_args)
+        dataloader = ds.GeneratorDataset(**dataloader_args, column_names=['data'])
+        dataloader = dataloader.batch(batch_size=batch_size, drop_remainder=True)
+        # 如果设置参数大于1则与 persistent_workers 为True一致
+        if persistent_workers == True:
+            persistent_workers = 2
+        else:
+            persistent_workers = -1
+        dataloader = dataloader.create_tuple_iterator(num_epochs=persistent_workers)
+        return dataloader
 
 
 def worker_init_fn(worker_id, num_workers, rank, seed):

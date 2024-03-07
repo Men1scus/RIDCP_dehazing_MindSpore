@@ -1,19 +1,22 @@
 import collections.abc
 import math
-import torch
+# import torch
 import torchvision
 import warnings
 from distutils.version import LooseVersion
 from itertools import repeat
-from torch import nn as nn
-from torch.nn import functional as F
-from torch.nn import init as init
-from torch.nn.modules.batchnorm import _BatchNorm
-
+# from torch import nn as nn
+# from torch.nn import functional as F
+# from torch.nn import init as init
+# from torch.nn.modules.batchnorm import _BatchNorm
+import mindspore as ms
+from mindspore import nn, ops
+from mindspore.common import initializer
+from mindspore.nn import BatchNorm2d # 存疑
 from basicsr.utils import get_root_logger
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def default_init_weights(module_list, scale=1, bias_fill=0, **kwargs):
     """Initialize network weights.
 
@@ -27,21 +30,65 @@ def default_init_weights(module_list, scale=1, bias_fill=0, **kwargs):
     if not isinstance(module_list, list):
         module_list = [module_list]
     for module in module_list:
-        for m in module.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_normal_(m.weight, **kwargs)
-                m.weight.data *= scale
-                if m.bias is not None:
-                    m.bias.data.fill_(bias_fill)
-            elif isinstance(m, nn.Linear):
-                init.kaiming_normal_(m.weight, **kwargs)
-                m.weight.data *= scale
-                if m.bias is not None:
-                    m.bias.data.fill_(bias_fill)
-            elif isinstance(m, _BatchNorm):
-                init.constant_(m.weight, 1)
-                if m.bias is not None:
-                    m.bias.data.fill_(bias_fill)
+        # for m in module.modules():
+        #     if isinstance(m, nn.Conv2d):
+        #         init.kaiming_normal_(m.weight, **kwargs)
+        #         m.weight.data *= scale
+        #         if m.bias is not None:
+        #             m.bias.data.fill_(bias_fill)
+        #     elif isinstance(m, nn.Linear):
+        #         init.kaiming_normal_(m.weight, **kwargs)
+        #         m.weight.data *= scale
+        #         if m.bias is not None:
+        #             m.bias.data.fill_(bias_fill)
+        #     elif isinstance(m, _BatchNorm):
+        #         init.constant_(m.weight, 1)
+        #         if m.bias is not None:
+        #             m.bias.data.fill_(bias_fill)
+
+        for _, cell in module.cells_and_names():
+            if isinstance(cell, nn.Conv2d):
+                cell.weight.set_data(initializer.initializer(
+                    initializer.HeNormal(negative_slope=0, mode='fan_out',
+                                        nonlinearity='relu'),
+                    cell.weight.shape, cell.weight.dtype))
+                if cell.bias is not None:
+                    cell.bias.set_data(
+                        initializer.initializer(
+                            bias_fill, cell.bias.shape, cell.bias.dtype
+                        )
+                    )
+                
+            elif isinstance(cell, (nn.Dense)):
+                cell.weight.set_data(
+                    initializer.initializer(
+                        initializer.HeUniform(
+                            negative_slope=math.sqrt(5)
+                        ),
+                        cell.weight.shape, cell.weight.dtype
+                    )
+                )
+                cell.weight.data *= scale
+                if cell.bias is not None:
+                    cell.bias.set_data(
+                        initializer.initializer(
+                            bias_fill, cell.bias.shape, cell.bias.dtype
+                        )
+                    )
+                
+            elif isinstance(cell, (nn.BatchNorm2d)):
+                cell.gamma.set_data(
+                    initializer.initializer(
+                        "ones", cell.gamma.shape, cell.gamma.dtype
+                    )
+                )
+                if cell.beta is not None:
+                    cell.beta.set_data(
+                        initializer.initializer(
+                            bias_fill, cell.beta.shape, cell.beta.dtype
+                        )
+                    )
+            
 
 
 def make_layer(basic_block, num_basic_block, **kwarg):
@@ -60,7 +107,9 @@ def make_layer(basic_block, num_basic_block, **kwarg):
     return nn.Sequential(*layers)
 
 
-class ResidualBlockNoBN(nn.Module):
+# class ResidualBlockNoBN(nn.Module):
+class ResidualBlockNoBN(nn.Cell):
+
     """Residual block without BN.
 
     It has a style of:
@@ -78,8 +127,8 @@ class ResidualBlockNoBN(nn.Module):
     def __init__(self, num_feat=64, res_scale=1, pytorch_init=False):
         super(ResidualBlockNoBN, self).__init__()
         self.res_scale = res_scale
-        self.conv1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
-        self.conv2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
+        self.conv1 = nn.Conv2d(num_feat, num_feat, 3, 1, padding=1, pad_mode='pad', has_bias=True)
+        self.conv2 = nn.Conv2d(num_feat, num_feat, 3, 1, padding=1, pad_mode='pad', has_bias=True)
         self.relu = nn.ReLU(inplace=True)
 
         if not pytorch_init:
@@ -91,7 +140,8 @@ class ResidualBlockNoBN(nn.Module):
         return identity + out * self.res_scale
 
 
-class Upsample(nn.Sequential):
+# class Upsample(nn.Sequential):
+class Upsample(nn.SequentialCell):
     """Upsample module.
 
     Args:
@@ -103,10 +153,10 @@ class Upsample(nn.Sequential):
         m = []
         if (scale & (scale - 1)) == 0:  # scale = 2^n
             for _ in range(int(math.log(scale, 2))):
-                m.append(nn.Conv2d(num_feat, 4 * num_feat, 3, 1, 1))
+                m.append(nn.Conv2d(num_feat, 4 * num_feat, 3, 1, padding=1, pad_mode='pad', has_bias=True))
                 m.append(nn.PixelShuffle(2))
         elif scale == 3:
-            m.append(nn.Conv2d(num_feat, 9 * num_feat, 3, 1, 1))
+            m.append(nn.Conv2d(num_feat, 9 * num_feat, 3, 1, padding=1, pad_mode='pad', has_bias=True))
             m.append(nn.PixelShuffle(3))
         else:
             raise ValueError(f'scale {scale} is not supported. ' 'Supported scales: 2^n and 3.')
@@ -132,16 +182,20 @@ def flow_warp(x, flow, interp_mode='bilinear', padding_mode='zeros', align_corne
     assert x.size()[-2:] == flow.size()[1:3]
     _, _, h, w = x.size()
     # create mesh grid
-    grid_y, grid_x = torch.meshgrid(torch.arange(0, h).type_as(x), torch.arange(0, w).type_as(x))
-    grid = torch.stack((grid_x, grid_y), 2).float()  # W(x), H(y), 2
+    # grid_y, grid_x = torch.meshgrid(torch.arange(0, h).type_as(x), torch.arange(0, w).type_as(x))
+    # grid = torch.stack((grid_x, grid_y), 2).float()  # W(x), H(y), 2
+    grid_y, grid_x = ops.meshgrid(ops.arange(0, h).type_as(x), ops.arange(0, w).type_as(x))
+    grid = ops.stack((grid_x, grid_y), 2).float()  # W(x), H(y), 2
     grid.requires_grad = False
 
     vgrid = grid + flow
     # scale grid to [-1,1]
     vgrid_x = 2.0 * vgrid[:, :, :, 0] / max(w - 1, 1) - 1.0
     vgrid_y = 2.0 * vgrid[:, :, :, 1] / max(h - 1, 1) - 1.0
-    vgrid_scaled = torch.stack((vgrid_x, vgrid_y), dim=3)
-    output = F.grid_sample(x, vgrid_scaled, mode=interp_mode, padding_mode=padding_mode, align_corners=align_corners)
+    # vgrid_scaled = torch.stack((vgrid_x, vgrid_y), dim=3)
+    # output = F.grid_sample(x, vgrid_scaled, mode=interp_mode, padding_mode=padding_mode, align_corners=align_corners)
+    vgrid_scaled = ops.stack((vgrid_x, vgrid_y), axis=3)
+    output = ops.grid_sample(x, vgrid_scaled, mode=interp_mode, padding_mode=padding_mode, align_corners=align_corners)
 
     # TODO, what if align_corners=False
     return output
@@ -180,7 +234,9 @@ def resize_flow(flow, size_type, sizes, interp_mode='bilinear', align_corners=Fa
     ratio_w = output_w / flow_w
     input_flow[:, 0, :, :] *= ratio_w
     input_flow[:, 1, :, :] *= ratio_h
-    resized_flow = F.interpolate(
+    # resized_flow = F.interpolate(
+    #     input=input_flow, size=(output_h, output_w), mode=interp_mode, align_corners=align_corners)
+    resized_flow = ops.interpolate(
         input=input_flow, size=(output_h, output_w), mode=interp_mode, align_corners=align_corners)
     return resized_flow
 
@@ -219,28 +275,29 @@ def _no_grad_trunc_normal_(tensor, mean, std, a, b):
             'The distribution of values may be incorrect.',
             stacklevel=2)
 
-    with torch.no_grad():
-        # Values are generated by using a truncated uniform distribution and
-        # then using the inverse CDF for the normal distribution.
-        # Get upper and lower cdf values
-        low = norm_cdf((a - mean) / std)
-        up = norm_cdf((b - mean) / std)
+    # with torch.no_grad():
+        
+    # Values are generated by using a truncated uniform distribution and
+    # then using the inverse CDF for the normal distribution.
+    # Get upper and lower cdf values
+    low = norm_cdf((a - mean) / std)
+    up = norm_cdf((b - mean) / std)
 
-        # Uniformly fill tensor with values from [low, up], then translate to
-        # [2l-1, 2u-1].
-        tensor.uniform_(2 * low - 1, 2 * up - 1)
+    # Uniformly fill tensor with values from [low, up], then translate to
+    # [2l-1, 2u-1].
+    tensor.uniform_(2 * low - 1, 2 * up - 1)
 
-        # Use inverse cdf transform for normal distribution to get truncated
-        # standard normal
-        tensor.erfinv_()
+    # Use inverse cdf transform for normal distribution to get truncated
+    # standard normal
+    tensor.erfinv_()
 
-        # Transform to proper mean, std
-        tensor.mul_(std * math.sqrt(2.))
-        tensor.add_(mean)
+    # Transform to proper mean, std
+    tensor.mul_(std * math.sqrt(2.))
+    tensor.add_(mean)
 
-        # Clamp to ensure it's in the proper range
-        tensor.clamp_(min=a, max=b)
-        return tensor
+    # Clamp to ensure it's in the proper range
+    tensor.clamp_(min=a, max=b)
+    return tensor
 
 
 def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):

@@ -1,9 +1,10 @@
 import math
 from collections import Counter
-from torch.optim.lr_scheduler import _LRScheduler
+# from torch.optim.lr_scheduler import _LRScheduler
+from mindspore.experimental.optim.lr_scheduler import LRScheduler
 
-
-class MultiStepRestartLR(_LRScheduler):
+# class MultiStepRestartLR(_LRScheduler):
+class MultiStepRestartLR(LRScheduler):
     """ MultiStep with restarts learning rate scheme.
 
     Args:
@@ -54,7 +55,8 @@ def get_position_from_periods(iteration, cumulative_period):
             return i
 
 
-class CosineAnnealingRestartLR(_LRScheduler):
+# class CosineAnnealingRestartLR(_LRScheduler):
+class CosineAnnealingRestartLR(LRScheduler):
     """ Cosine annealing with restarts learning rate scheme.
 
     An example of config:

@@ -2,7 +2,8 @@ import datetime
 import logging
 import math
 import time
-import torch
+# import torch
+import mindspore as ms
 import os
 import shutil
 from os import path as osp
@@ -14,7 +15,7 @@ from basicsr.models import build_model
 from basicsr.utils import (AvgTimer, MessageLogger, check_resume, get_env_info, get_root_logger, get_time_str,
                            init_tb_logger, init_wandb_logger, make_exp_dirs, mkdir_and_rename, scandir)
 from basicsr.utils.options import copy_opt_file, dict2str, parse_options
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.benchmark = True
 
 def mkdir_and_rename(path):
     """mkdirs. If path exists, rename it with timestamp and create a new one.
@@ -98,8 +99,8 @@ def load_resume_state(opt):
     if resume_state_path is None:
         resume_state = None
     else:
-        device_id = torch.cuda.current_device()
-        resume_state = torch.load(resume_state_path, map_location=lambda storage, loc: storage.cuda(device_id))
+        # device_id = torch.cuda.current_device()
+        # resume_state = torch.load(resume_state_path, map_location=lambda storage, loc: storage.cuda(device_id))
         check_resume(opt, resume_state['iter'])
     return resume_state
 
@@ -109,7 +110,7 @@ def train_pipeline(root_path):
     opt, args = parse_options(root_path, is_train=True)
     opt['root_path'] = root_path
 
-    torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.benchmark = True
     # torch.backends.cudnn.deterministic = True
 
     # load resume states if necessary
@@ -137,8 +138,11 @@ def train_pipeline(root_path):
     result = create_train_val_dataloader(opt, logger)
     train_loader, train_sampler, val_loaders, total_epochs, total_iters = result
 
+
     # create model
     model = build_model(opt)
+
+
     if resume_state:  # resume training
         model.resume_training(resume_state)  # handle optimizers and schedulers
         logger.info(f"Resuming training from epoch: {resume_state['epoch']}, " f"iter: {resume_state['iter']}.")
@@ -147,7 +151,6 @@ def train_pipeline(root_path):
     else:
         start_epoch = 0
         current_iter = 0
-
     # create message logger (formatted outputs)
     msg_logger = MessageLogger(opt, current_iter, tb_logger)
 
@@ -239,5 +242,6 @@ def train_pipeline(root_path):
 
 
 if __name__ == '__main__':
+    ms.set_context(device_target="GPU" , pynative_synchronize=True)
     root_path = osp.abspath(osp.join(__file__, osp.pardir, osp.pardir))
     train_pipeline(root_path)

@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
-import torch
+# import torch
+import mindspore as ms
 import os
 from os import path as osp
-from torch.nn import functional as F
+# from torch.nn import functional as F
+from mindspore import ops 
 
 from basicsr.data.transforms import mod_crop
 from basicsr.utils import img2tensor, scandir
@@ -55,7 +57,8 @@ def read_img_seq(path, require_mod_crop=False, scale=1, return_imgname=False):
     if require_mod_crop:
         imgs = [mod_crop(img, scale) for img in imgs]
     imgs = img2tensor(imgs, bgr2rgb=True, float32=True)
-    imgs = torch.stack(imgs, dim=0)
+    # imgs = torch.stack(imgs, dim=0)
+    imgs = ops.stack(imgs, axis=0)
 
     if return_imgname:
         imgnames = [osp.splitext(osp.basename(path))[0] for path in img_paths]
@@ -325,11 +328,16 @@ def duf_downsample(x, kernel_size=13, scale=4):
     b, t, c, h, w = x.size()
     x = x.view(-1, 1, h, w)
     pad_w, pad_h = kernel_size // 2 + scale * 2, kernel_size // 2 + scale * 2
-    x = F.pad(x, (pad_w, pad_w, pad_h, pad_h), 'reflect')
+    # x = F.pad(x, (pad_w, pad_w, pad_h, pad_h), 'reflect')
+    x = ops.pad(x, (pad_w, pad_w, pad_h, pad_h), 'reflect')
+
 
     gaussian_filter = generate_gaussian_kernel(kernel_size, 0.4 * scale)
-    gaussian_filter = torch.from_numpy(gaussian_filter).type_as(x).unsqueeze(0).unsqueeze(0)
-    x = F.conv2d(x, gaussian_filter, stride=scale)
+    # gaussian_filter = torch.from_numpy(gaussian_filter).type_as(x).unsqueeze(0).unsqueeze(0)
+    gaussian_filter = ms.from_numpy(gaussian_filter).type_as(x).unsqueeze(0).unsqueeze(0)
+    # x = F.conv2d(x, gaussian_filter, stride=scale)
+    x = ops.conv2d(x, gaussian_filter, stride=scale)
+
     x = x[:, :, 2:-2, 2:-2]
     x = x.view(b, t, c, x.size(2), x.size(3))
     if squeeze_flag:
