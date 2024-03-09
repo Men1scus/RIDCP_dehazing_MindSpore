@@ -1,8 +1,7 @@
-# <p align=center> :fire: `RIDCP: Revitalizing Real Image Dehazing via High-Quality Codebook Priors (CVPR2023)`</p>
+# $\rm{[MindSpore-phase3]}$ $RIDCP$
 
-![Python 3.8](https://img.shields.io/badge/python-3.8-g) ![pytorch 1.12.0](https://img.shields.io/badge/pytorch-1.12.0-blue.svg)
+本项目包含了以下论文的 MindSpore 实现：
 
-This is the official PyTorch codes for the paper.  
 >**RIDCP: Revitalizing Real Image Dehazing via High-Quality Codebook Priors**<br>  [Ruiqi Wu](https://rq-wu.github.io/), [Zhengpeng Duan](https://github.com/Adam-duan), [Chunle Guo<sup>*</sup>](https://scholar.google.com/citations?user=RZLYwR0AAAAJ&hl=en), [Zhi Chai](), [Chongyi Li](https://li-chongyi.github.io/) （ * indicates corresponding author)<br>
 >The IEEE / CVF Computer Vision and Pattern Recognition Conference (CVPR), 2023
 
@@ -10,25 +9,20 @@ This is the official PyTorch codes for the paper.
 
 [[Arxiv Paper](https://arxiv.org/abs/2304.03994)]  [中文版 (TBD)] [[Website Page](https://rq-wu.github.io/projects/RIDCP/index.html)]  [[Dataset](https://pan.baidu.com/s/1oX3AZkVlEa7S1sSO12r47Q) (pwd:qqqo)]
 
-### :rocket: Highlights:
-- **SOTA performance**: The proposed RIDCP achieves superior performance in both qualitative and quantitative comparisons with SOTA methods.
-- **Adjustable**: Our RIDCP can adjust the degree of enhancement manually.
-### :page_facing_up: Todo-list
-- Release code for VQGAN pre-training and CHM weights acquiring
-- Website page
-- Colab demo
+文章官方版本仓库链接: https://github.com/RQ-Wu/RIDCP_dehazing
 
-## Demo
-<img src="figs/fig1.png" width="800px">
-<img src="figs/fig2.png" width="800px">
+目前已经完成大部分代码的 MindSpore 转化
 
-### Video examples
-<img src="https://github.com/RQ-Wu/RIDCP/blob/master/figs/mountain.gif?raw=true" width="390px"/> &nbsp; &nbsp; &nbsp; &nbsp; <img src="https://github.com/RQ-Wu/RIDCP/blob/master/figs/car.gif?raw=true" width="390px"/>
+## 正在进行中的工作
+
+-  完整代码的 MindSpore 实现
 
 ## Dependencies and Installation
 
 - Ubuntu >= 18.04
 - CUDA >= 11.0
+- MindSpore Nightly
+- MindCV
 - Other required packages in `requirements.txt`
 ```
 # git clone this repository
@@ -60,8 +54,8 @@ BASICSR_EXT=True python setup.py develop
     <td>HQPs</td>
     <th>VQGAN pretrained on high-quality data.</th>
     <th rowspan="3">
-    [<a href="">Google Drive (TBD)</a>] 
-    [<a href="https://pan.baidu.com/s/1ps9dPmerWyXILxb6lkHihQ">Baidu Disk (pwd: huea)</a>]
+    [<a href="">Google Drive (TBD)</a>] <br>
+    [<a href="">Baidu Disk (TBD)</a>]
     </th>
 </tr>
 <tr>
@@ -122,13 +116,13 @@ pretrained_models
     |- pretrained_RIDCP.pth
     |- weight_for_matching_dehazing_Flickr.pth
 ```
-### Quick demo
+### Quick demo (TBD)
 Run demos to process the images in dir `./examples/` by following commands:
 ```
 python inference_ridcp.py -i examples -w pretrained_models/pretrained_RIDCP.pth -o results --use weight --alpha -21.25
 ```
 
-### Train RIDCP
+### Train RIDCP (TBD)
 Step 1: Pretrain a VQGAN on high-quality dataset
 ```
 TBD
@@ -143,21 +137,3 @@ Step3: Adjust our RIDCP
 ```
 TBD
 ```
-
-## Citation
-If you find our repo useful for your research, please cite us:
-```
-@inproceedings{wu2023ridcp,
-    title={RIDCP: Revitalizing Real Image Dehazing via High-Quality Codebook Priors},
-    author={Wu, Ruiqi and Duan, Zhengpeng and Guo, Chunle and Chai, Zhi and Li, Chongyi},
-    booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
-    year={2023}
-}
-```
-
-## License
-Licensed under a [Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/) for Non-commercial use only.
-Any commercial use should get formal permission first.
-
-## Acknowledgement
-This repository is maintained by [Ruiqi Wu](https://rq-wu.github.io/).
