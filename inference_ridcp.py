@@ -4,6 +4,8 @@ import glob
 import os
 from tqdm import tqdm
 import torch
+import mindspore as ms
+from mindspore import ops
 from yaml import load
 
 from basicsr.utils import img2tensor, tensor2img, imwrite
@@ -24,14 +26,18 @@ def main():
     parser.add_argument('--max_size', type=int, default=1500, help='Max image size for whole image inference, otherwise use tiled_test')
     args = parser.parse_args()
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+    device = 'GPU'
+    ms.set_context(device_target="GPU" , pynative_synchronize=True)
     weight_path = args.weight
     
     # set up the model
-    sr_model = VQWeightDehazeNet(codebook_params=[[64, 1024, 512]], LQ_stage=True, use_weight=args.use_weight, weight_alpha=args.alpha).to(device)
-    sr_model.load_state_dict(torch.load(weight_path)['params'], strict=False)
-    sr_model.eval()
-    
+    # sr_model = VQWeightDehazeNet(codebook_params=[[64, 1024, 512]], LQ_stage=True, use_weight=args.use_weight, weight_alpha=args.alpha).to(device)
+    sr_model = VQWeightDehazeNet(codebook_params=[[64, 1024, 512]], LQ_stage=True, use_weight=args.use_weight, weight_alpha=args.alpha)
+    # sr_model.load_state_dict(torch.load(weight_path)['params'], strict=False)
+    # sr_model.eval()
+    ms.load_checkpoint(torch.load(weight_path)['params'], sr_model)
+    ms.set_train(False)
     os.makedirs(args.output, exist_ok=True)
     if os.path.isfile(args.input):
         paths = [args.input]

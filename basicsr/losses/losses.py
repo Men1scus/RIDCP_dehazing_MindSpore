@@ -15,17 +15,21 @@ _reduction_modes = ['none', 'mean', 'sum']
 
 @weighted_loss
 def l1_loss(pred, target):
-    return F.l1_loss(pred, target, reduction='none')
+    # return F.l1_loss(pred, target, reduction='none')
+    return ops.l1_loss(pred, target, reduction='none')
+
 
 
 @weighted_loss
 def mse_loss(pred, target):
-    return F.mse_loss(pred, target, reduction='none')
+    # return F.mse_loss(pred, target, reduction='none')
+    return ops.mse_loss(pred, target, reduction='none')
 
 
 @weighted_loss
 def charbonnier_loss(pred, target, eps=1e-12):
-    return torch.sqrt((pred - target)**2 + eps)
+    # return torch.sqrt((pred - target)**2 + eps)
+    return ops.sqrt((pred - target)**2 + eps)
 
 
 @LOSS_REGISTRY.register()
@@ -213,9 +217,14 @@ class PerceptualLoss(nn.Cell):
 
         self.criterion_type = criterion
         if self.criterion_type == 'l1':
-            self.criterion = torch.nn.L1Loss()
+            # self.criterion = torch.nn.L1Loss()
+            self.criterion = nn.L1Loss()
+
+            
         elif self.criterion_type == 'l2':
-            self.criterion = torch.nn.L2loss()
+            # self.criterion = torch.nn.L2loss()
+            self.criterion = nn.L2loss()
+
         elif self.criterion_type == 'fro':
             self.criterion = None
         else:
@@ -241,7 +250,8 @@ class PerceptualLoss(nn.Cell):
             percep_loss = 0
             for k in x_features.keys():
                 if self.criterion_type == 'fro':
-                    percep_loss += torch.norm(x_features[k] - gt_features[k], p='fro') * self.layer_weights[k]
+                    # percep_loss += torch.norm(x_features[k] - gt_features[k], p='fro') * self.layer_weights[k]
+                    percep_loss += ops.norm(x_features[k] - gt_features[k], ord='fro') * self.layer_weights[k]
                 else:
                     percep_loss += self.criterion(x_features[k], gt_features[k]) * self.layer_weights[k]
             percep_loss *= self.perceptual_weight
@@ -253,7 +263,9 @@ class PerceptualLoss(nn.Cell):
             style_loss = 0
             for k in x_features.keys():
                 if self.criterion_type == 'fro':
-                    style_loss += torch.norm(
+                    # style_loss += torch.norm(
+                    #     self._gram_mat(x_features[k]) - self._gram_mat(gt_features[k]), p='fro') * self.layer_weights[k]
+                    style_loss += ops.norm(
                         self._gram_mat(x_features[k]) - self._gram_mat(gt_features[k]), p='fro') * self.layer_weights[k]
                 else:
                     style_loss += self.criterion(self._gram_mat(x_features[k]), self._gram_mat(
@@ -341,7 +353,9 @@ class GANLoss(nn.Cell):
         Returns:
             Tensor: wgan loss.
         """
-        return F.softplus(-input).mean() if target else F.softplus(input).mean()
+        # return F.softplus(-input).mean() if target else F.softplus(input).mean()
+        return ops.softplus(-input).mean() if target else ops.softplus(input).mean()
+
 
     def get_target_label(self, input, target_is_real):
         """Get target label.
@@ -428,15 +442,19 @@ def r1_penalty(real_pred, real_img):
         Ref:
         Eq. 9 in Which training methods for GANs do actually converge.
         """
-    grad_real = autograd.grad(outputs=real_pred.sum(), inputs=real_img, create_graph=True)[0]
+    # grad_real = autograd.grad(outputs=real_pred.sum(), inputs=real_img, create_graph=True)[0]
+    grad_real = ms.grad(outputs=real_pred.sum(), inputs=real_img, create_graph=True)[0]
     grad_penalty = grad_real.pow(2).view(grad_real.shape[0], -1).sum(1).mean()
     return grad_penalty
 
 
 def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
-    noise = torch.randn_like(fake_img) / math.sqrt(fake_img.shape[2] * fake_img.shape[3])
-    grad = autograd.grad(outputs=(fake_img * noise).sum(), inputs=latents, create_graph=True)[0]
-    path_lengths = torch.sqrt(grad.pow(2).sum(2).mean(1))
+    # noise = torch.randn_like(fake_img) / math.sqrt(fake_img.shape[2] * fake_img.shape[3])
+    noise = ops.randn_like(fake_img) / math.sqrt(fake_img.shape[2] * fake_img.shape[3])
+    # grad = autograd.grad(outputs=(fake_img * noise).sum(), inputs=latents, create_graph=True)[0]
+    grad = ms.grad(outputs=(fake_img * noise).sum(), inputs=latents, create_graph=True)[0]
+    # path_lengths = torch.sqrt(grad.pow(2).sum(2).mean(1))
+    path_lengths = ops.sqrt(grad.pow(2).sum(2).mean(1))
 
     path_mean = mean_path_length + decay * (path_lengths.mean() - mean_path_length)
 
@@ -459,17 +477,23 @@ def gradient_penalty_loss(discriminator, real_data, fake_data, weight=None):
     """
 
     batch_size = real_data.size(0)
-    alpha = real_data.new_tensor(torch.rand(batch_size, 1, 1, 1))
+    # alpha = real_data.new_tensor(torch.rand(batch_size, 1, 1, 1))
+    alpha = real_data.new_tensor(ops.rand(batch_size, 1, 1, 1))
+
 
     # interpolate between real_data and fake_data
     interpolates = alpha * real_data + (1. - alpha) * fake_data
-    interpolates = autograd.Variable(interpolates, requires_grad=True)
+    # interpolates = autograd.Variable(interpolates, requires_grad=True)
+    interpolates = ops.Variable(interpolates, requires_grad=True)
+
 
     disc_interpolates = discriminator(interpolates)
-    gradients = autograd.grad(
+    # gradients = autograd.grad(
+    gradients = ms.grad(
         outputs=disc_interpolates,
         inputs=interpolates,
-        grad_outputs=torch.ones_like(disc_interpolates),
+        # grad_outputs=torch.ones_like(disc_interpolates),
+        grad_outputs=ops.ones_like(disc_interpolates),
         create_graph=True,
         retain_graph=True,
         only_inputs=True)[0]
@@ -479,7 +503,9 @@ def gradient_penalty_loss(discriminator, real_data, fake_data, weight=None):
 
     gradients_penalty = ((gradients.norm(2, dim=1) - 1)**2).mean()
     if weight is not None:
-        gradients_penalty /= torch.mean(weight)
+        # gradients_penalty /= torch.mean(weight)
+        gradients_penalty /= ops.mean(weight)
+
 
     return gradients_penalty
 
